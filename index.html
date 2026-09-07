@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Kombistível — Controle de Combustível</title>
+  <meta name="description" content="PWA offline para controle de abastecimentos, consumo (km/l), custos e viabilidade Etanol x Gasolina." />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="icons/favicon-64.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kombistível" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="app.js" defer></script>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">
+        <img src="icons/logo-dark.png" alt="" width="22" height="22">
+      </span>
+      <div class="brand-text">
+        <h1>Kombistível</h1>
+        <p>Controle de combustível</p>
+      </div>
+    </div>
+    <span id="offlineBadge" class="offline-badge hidden" role="status">Offline</span>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ VIEW: DASHBOARD ============ -->
+    <section id="view-dashboard" class="view is-active" aria-label="Dashboard">
+
+      <div class="filters card">
+        <div class="field compact">
+          <label for="filterVehicle">Veículo</label>
+          <select id="filterVehicle"></select>
+        </div>
+        <div class="field compact">
+          <label for="filterPeriod">Período</label>
+          <select id="filterPeriod">
+            <option value="30">Últimos 30 dias</option>
+            <option value="90">Últimos 3 meses</option>
+            <option value="ano">Ano atual</option>
+            <option value="all" selected>Todo o histórico</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="dashEmpty" class="empty-state card hidden">
+        <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3s6.3 6.6 6.3 11a6.3 6.3 0 1 1-12.6 0C5.7 9.6 12 3 12 3z"/><path d="M12 13v4"/></svg>
+        <h2>Sem dados por aqui</h2>
+        <p>Registre seu primeiro abastecimento para ver os indicadores.</p>
+        <button class="btn btn-primary btn-block" data-goto="novo">Registrar abastecimento</button>
+      </div>
+
+      <div id="dashContent" class="hidden">
+
+        <div class="kpi-grid" aria-label="Indicadores principais">
+          <article class="card kpi kpi-green">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+            <span class="kpi-label">Consumo médio</span>
+            <strong id="kpiConsumo">—</strong>
+            <small id="kpiConsumoSub">km/l</small>
+          </article>
+          <article class="card kpi kpi-orange">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <span class="kpi-label">Custo por km</span>
+            <strong id="kpiCustoKm">—</strong>
+            <small>R$/km rodado</small>
+          </article>
+          <article class="card kpi kpi-blue">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+            <span class="kpi-label">Gasto total</span>
+            <strong id="kpiGasto">—</strong>
+            <small id="kpiQtdAbastecimentos">&nbsp;</small>
+          </article>
+          <article class="card kpi kpi-purple">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.7s6.3 6.6 6.3 11a6.3 6.3 0 1 1-12.6 0c0-4.4 6.3-11 6.3-11z"/></svg></span>
+            <span class="kpi-label">Litros abastecidos</span>
+            <strong id="kpiLitros">—</strong>
+            <small>no período</small>
+          </article>
+        </div>
+
+        <article class="card viability" aria-label="Viabilidade Etanol x Gasolina">
+          <div class="card-title-row">
+            <h2>Etanol × Gasolina</h2>
+            <span id="viabVerdict" class="verdict-badge">—</span>
+          </div>
+          <div id="viabBody">
+            <p class="viab-prices">
+              <span>Gasolina <strong id="viabPrecoGas">—</strong></span>
+              <span>Etanol <strong id="viabPrecoEta">—</strong></span>
+            </p>
+            <div class="ratio-bar" role="img" aria-label="Comparação de preço do etanol em relação à gasolina">
+              <div id="viabBarFill" class="ratio-bar-fill"></div>
+              <span id="viabMarker" class="ratio-marker"></span>
+            </div>
+            <ul class="viab-details">
+              <li><span>Preço etanol / gasolina</span><b id="viabPriceRatio">—</b></li>
+              <li><span>Paridade de equilíbrio*</span><b id="viabBreakEven">—</b></li>
+              <li><span>Consumo real (E / G)</span><b id="viabKml">—</b></li>
+              <li><span>Vantagem estimada</span><b id="viabVantagem">—</b></li>
+            </ul>
+            <p class="hint">*Calculada pela regra dos 70%, ajustada pelo consumo real quando há dados de tanque cheio dos dois combustíveis.</p>
+          </div>
+          <p id="viabUnavailable" class="hint hidden">Registre abastecimentos com Etanol e Gasolina para a análise automática (regra dos 70% aplicada enquanto isso).</p>
+        </article>
+
+        <article class="card chart-card">
+          <h2>Evolução do consumo</h2>
+          <p class="chart-sub">km/l por abastecimento com tanque cheio</p>
+          <div class="chart-wrap"><canvas id="chartConsumo" role="img" aria-label="Gráfico de linha da evolução do consumo"></canvas></div>
+          <p id="chartConsumoEmpty" class="hint hidden">Ainda não há ciclos completos de tanque cheio no período filtrado.</p>
+        </article>
+
+        <article class="card chart-card">
+          <h2>Gastos mensais</h2>
+          <p class="chart-sub">total pago (R$) por mês</p>
+          <div class="chart-wrap"><canvas id="chartMensal" role="img" aria-label="Gráfico de barras dos gastos mensais"></canvas></div>
+          <p id="chartMensalEmpty" class="hint hidden">Sem gastos registrados no período filtrado.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ VIEW: NOVO ABASTECIMENTO ============ -->
+    <section id="view-novo" class="view" aria-label="Novo abastecimento">
+      <form id="formAbastecimento" class="form" novalidate>
+
+        <fieldset class="card">
+          <legend>Veículo</legend>
+          <div class="field">
+            <label for="inpVeiculo">Selecionar veículo</label>
+            <select id="inpVeiculo" required>
+              <option value="" disabled selected>Escolha ou cadastre…</option>
+            </select>
+          </div>
+
+          <div id="newVehicleFields" class="new-vehicle-fields hidden">
+            <div class="field-row">
+              <div class="field">
+                <label for="inpMarca">Marca</label>
+                <input type="text" id="inpMarca" placeholder="Ex.: Fiat" autocomplete="off" maxlength="40" />
+              </div>
+              <div class="field">
+                <label for="inpModelo">Modelo</label>
+                <input type="text" id="inpModelo" placeholder="Ex.: Argo 1.0" autocomplete="off" maxlength="60" />
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="inpAno">Ano</label>
+                <input type="number" id="inpAno" inputmode="numeric" min="1950" max="2100" step="1" placeholder="2020" />
+              </div>
+              <div class="field">
+                <label for="inpCombustivelPadrao">Combustível padrão</label>
+                <select id="inpCombustivelPadrao">
+                  <option value="gasolina">Gasolina</option>
+                  <option value="etanol">Etanol</option>
+                  <option value="flex">Flex (Gasolina + Etanol)</option>
+                  <option value="diesel">Diesel</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="vehicleInfo" class="hidden">
+            <dl class="vehicle-info">
+              <div><dt>Ficha</dt><dd id="infoFicha">—</dd></div>
+              <div><dt>Última KM</dt><dd id="infoUltimaKm">—</dd></div>
+            </dl>
+            <button type="button" id="btnEditVehicle" class="btn btn-ghost btn-block btn-edit-vehicle">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Editar veículo
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="card">
+          <legend>Combustível deste abastecimento</legend>
+          <div class="segmented" role="radiogroup" aria-label="Tipo de combustível">
+            <label class="segment">
+              <input type="radio" name="fuelType" value="etanol" checked />
+              <span>Etanol</span>
+            </label>
+            <label class="segment">
+              <input type="radio" name="fuelType" value="gasolina" />
+              <span>Gasolina</span>
+            </label>
+            <label class="segment">
+              <input type="radio" name="fuelType" value="diesel" />
+              <span>Diesel</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="card">
+          <legend>Dados da transação</legend>
+
+          <div class="field-row">
+            <div class="field grow">
+              <label for="inpData">Data e hora</label>
+              <input type="datetime-local" id="inpData" required />
+            </div>
+            <div class="field">
+              <label for="inpKm">KM atual</label>
+              <input type="number" id="inpKm" inputmode="decimal" min="0" step="1" placeholder="0" required />
+            </div>
+          </div>
+          <p id="kmHint" class="hint hidden"></p>
+
+          <div class="field-row three">
+            <div class="field">
+              <label for="inpPreco">Preço/litro (R$)</label>
+              <input type="text" id="inpPreco" inputmode="decimal" autocomplete="off" placeholder="0,00" required />
+            </div>
+            <div class="field">
+              <label for="inpTotal">Total pago (R$)</label>
+              <input type="text" id="inpTotal" inputmode="decimal" autocomplete="off" placeholder="0,00" />
+            </div>
+            <div class="field">
+              <label for="inpLitros">Litros</label>
+              <input type="number" id="inpLitros" inputmode="decimal" min="0" step="0.001" placeholder="0,000" />
+            </div>
+          </div>
+          <p class="hint">Informe o total pago <em>ou</em> os litros — o outro campo é calculado automaticamente.</p>
+
+          <div class="field">
+            <label for="inpPosto">Posto (opcional)</label>
+            <input type="text" id="inpPosto" placeholder="Ex.: Posto Shell BR-101" autocomplete="off" maxlength="80" list="postosList" />
+            <datalist id="postosList"></datalist>
+          </div>
+
+          <label class="switch-row" for="inpTanqueCheio">
+            <span class="switch-text">
+              <strong>Tanque cheio?</strong>
+              <small>Necessário para calcular o km/l com precisão.</small>
+            </span>
+            <input type="checkbox" id="inpTanqueCheio" role="switch" />
+            <span class="switch-ui" aria-hidden="true"></span>
+          </label>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary btn-block" id="btnSubmitForm">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <span id="btnSubmitLabel">Salvar abastecimento</span>
+          </button>
+          <button type="button" id="btnCancelEdit" class="btn btn-ghost btn-block hidden">Cancelar edição</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ============ VIEW: HISTÓRICO ============ -->
+    <section id="view-historico" class="view" aria-label="Histórico de abastecimentos">
+
+      <div class="backup-row">
+        <button id="btnExportJson" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          JSON
+        </button>
+        <button id="btnExportCsv" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          CSV
+        </button>
+        <button id="btnImport" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Importar
+        </button>
+        <input type="file" id="importFile" accept=".json,.csv,text/csv,application/json" hidden />
+      </div>
+
+      <h2 class="list-title">Abastecimentos <span id="histCount" class="count-chip">0</span></h2>
+      <div id="historyList" class="history-list" aria-live="polite"></div>
+
+      <div id="historyEmpty" class="empty-state card hidden">
+        <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <h2>Nenhum registro</h2>
+        <p>Os abastecimentos salvos aparecerão aqui, do mais recente ao mais antigo.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav" aria-label="Navegação principal">
+    <button class="nav-btn is-active" data-view="dashboard" aria-current="page">
+      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13 8.5 9.5"/><path d="M20.3 17a9 9 0 1 0-16.6 0"/><path d="M12 13a2 2 0 1 0 0-.01"/></svg>
+      <span>Painel</span>
+    </button>
+    <button class="nav-btn nav-fab" data-view="novo" aria-label="Novo abastecimento">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Abastecer</span>
+    </button>
+    <button class="nav-btn" data-view="historico">
+      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>
+      <span>Histórico</span>
+    </button>
+  </nav>
+
+  <div id="confirmModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal card">
+      <h2 id="confirmTitle">Confirmar</h2>
+      <p id="confirmMessage">Tem certeza?</p>
+      <div class="modal-actions">
+        <button id="confirmCancel" class="btn btn-ghost">Cancelar</button>
+        <button id="confirmOk" class="btn btn-danger">Excluir</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editVehicleModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editVehTitle">
+    <div class="modal card">
+      <h2 id="editVehTitle">Editar veículo</h2>
+      <form id="formEditVeiculo" novalidate>
+        <div class="field">
+          <label for="edMarca">Marca</label>
+          <input type="text" id="edMarca" autocomplete="off" maxlength="40" required />
+        </div>
+        <div class="field">
+          <label for="edModelo">Modelo</label>
+          <input type="text" id="edModelo" autocomplete="off" maxlength="60" required />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="edAno">Ano</label>
+            <input type="number" id="edAno" inputmode="numeric" min="1950" max="2100" step="1" />
+          </div>
+          <div class="field">
+            <label for="edCombustivel">Combustível padrão</label>
+            <select id="edCombustivel">
+              <option value="gasolina">Gasolina</option>
+              <option value="etanol">Etanol</option>
+              <option value="flex">Flex (Gasolina + Etanol)</option>
+              <option value="diesel">Diesel</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="edCancel" class="btn btn-ghost">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar alterações</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="installBanner" class="install-banner hidden" role="dialog" aria-labelledby="installTitle">
+    <img src="icons/icon-192.png" alt="" class="install-icon" />
+    <div class="install-text">
+      <strong id="installTitle">Instalar o Kombistível</strong>
+      <span id="installHint">Acesso rápido na tela inicial e uso offline.</span>
+    </div>
+    <div class="install-actions">
+      <button type="button" id="installDismiss" class="btn btn-ghost" aria-label="Agora não">✕</button>
+      <button type="button" id="installAccept" class="btn btn-primary">Instalar</button>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+</body>
+</html>
