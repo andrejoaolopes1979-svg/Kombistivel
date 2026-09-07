@@ -84,7 +84,10 @@ Kombistivel/
 ├── app.js                # Toda a lógica da aplicação (armazenamento local, cálculos, UI)
 ├── manifest.json         # Manifest PWA (nome, ícones, cores, display standalone)
 ├── service-worker.js     # Cache offline (versão atual: kombistivel-v10)
-└── icons/                # Favicon, ícones PWA (192/512) e versões maskable
+├── icons/                # Favicon, ícones PWA (192/512) e versões maskable
+└── .github/
+    └── workflows/
+        └── deploy.yml    # CI/CD: publica automaticamente no GitHub Pages a cada push na main
 ```
 
 ### Seções do `app.js`
@@ -206,11 +209,13 @@ Abra `http://localhost:8080`.
 
 ## Deploy (GitHub Pages)
 
-O projeto é totalmente estático e sem build. Basta publicar a pasta raiz:
+O projeto é totalmente estático e sem build. Site publicado automaticamente:
 
-### Opção 1 — GitHub Actions (recomendada)
+**https://andrejoaolopes1979-svg.github.io/Kombistivel/**
 
-Crie `.github/workflows/deploy.yml`:
+### GitHub Actions (já configurado)
+
+O arquivo `.github/workflows/deploy.yml` já está no repositório. A cada `push` na branch `main` o workflow publica a pasta raiz no Pages:
 
 ```yaml
 name: Deploy to GitHub Pages
@@ -224,6 +229,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -236,19 +245,10 @@ jobs:
       - uses: actions/deploy-pages@v4
 ```
 
-Em **Settings → Pages**, defina *Source* como **GitHub Actions**.
+Para ativar: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-### Opção 2 — Branch `gh-pages`
+> Dica: o nome do arquivo pode ser qualquer um dentro de `.github/workflows/`; o YAML acima é apenas a documentação do que já está versionado.
 
-```bash
-git add .
-git commit -m "Deploy"
-git push
-git subtree push --prefix . origin gh-pages
-```
-
-Em **Settings → Pages**, defina *Source* como **Deploy from a branch** → `gh-pages`.
-
-> Observações para deploy em `<usuario>.github.io/<repositorio>/`:
-> - Se o app for servido em um subcaminho, ajuste as URLs dos assets (ex.: `service-worker.js` e `manifest.json`) ou use um domínio próprio em **Settings → Pages → Custom domain**.
+> Sobre o subcaminho em `<usuario>.github.io/<repositorio>/`:
+> - Todos os assets do app usam caminhos **relativos** (`./`, `icons/…`, `service-worker.js`, `manifest.json`), então funcionam normalmente em qualquer subcaminho. Não é preciso ajustar URLs.
 > - O Service Worker só funciona em HTTPS ou `localhost` (o GitHub Pages já usa HTTPS).
