@@ -1,6 +1,6 @@
 # Kombistível — Controle de Combustível
 
-PWA (Progressive Web App) para controle de abastecimentos, consumo médio (km/l), custo por quilômetro e análise de viabilidade **Etanol × Gasolina**. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage`) e backup manual via arquivo JSON.
+PWA (Progressive Web App) para controle de abastecimentos, consumo médio (km/l), custo por quilômetro e análise de viabilidade **Etanol × Gasolina**. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage` + backup durável silencioso em `IndexedDB`) e backup manual via arquivo JSON.
 
 ---
 
@@ -28,7 +28,7 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 - Comparação automática entre Etanol e Gasolina usando consumo **real** do veículo.
 - Gráficos de evolução do consumo e gastos mensais.
 - Suporte a múltiplos veículos.
-- Dados salvos somente no dispositivo (`localStorage`), sem conta ou nuvem.
+- Dados salvos somente no dispositivo (`localStorage` + backup em `IndexedDB`), sem conta ou nuvem.
 
 ## Funcionalidades
 
@@ -53,11 +53,17 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 - Lista ordenada do mais recente ao mais antigo, com contagem.
 - Edição e exclusão (com diálogo de confirmação) de cada registro.
 - Botões de exportação JSON / CSV e importação.
+- Botão **Salvar agora**, que sincroniza o backup local manualmente a qualquer momento.
 
 ### Armazenamento e backup
-- Todos os dados (veículos + abastecimentos) ficam salvos exclusivamente no `localStorage` do navegador — sem conta, sem nuvem.
-- Chave única: `kombistivel.v1`, estrutura `{ vehicles, records, savedAt }`.
-- Backups são feitos manualmente pelos botões **JSON/CSV** da aba Histórico (download de arquivo) e restaurados pelo botão **Importar**.
+- Todos os dados (veículos + abastecimentos) ficam salvos exclusivamente no dispositivo — sem conta, sem nuvem.
+- **`localStorage`** (chave `kombistivel.v1`): leitura instantânea e volume interno do app. Estrutura `{ vehicles, records, savedAt }`.
+- **`IndexedDB`** (banco `kombistivel-db`, store `profile`): **backup durável silencioso**. A cada gravação o estado é espelhado automaticamente, sem permissões ou prompts.
+- Na abertura, o app concilia as duas fontes pelo `savedAt` mais recente — a mais atual vence e sincroniza a outra. Assim, limpar o cache do Service Worker não apaga os dados: eles são restaurados do `IndexedDB` e o `localStorage` é recriado sozinho.
+- Indicador discreto **"Backup automático ativo · última sincronização …"** logo abaixo dos botões de backup na aba Histórico.
+- Backups manuais adicionais: botão **Salvar agora** (força a sincronização do backup local) e exportação **JSON/CSV** (download de arquivo), com restauração pelo botão **Importar**.
+
+> Limpar apenas o *cache* (Cache API/Service Worker) não afeta o `IndexedDB`. Limpar "dados de sites/navegação" completos apaga também `localStorage` e `IndexedDB` — nesse cenário, use o backup **JSON** exportado.
 
 ### PWA
 - Banner de instalação (Android/desktop via `beforeinstallprompt` e instruções manuais para iOS).
@@ -69,7 +75,7 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 |---|---|
 | Front-end | HTML5, CSS3 e JavaScript vanilla (ES6+, sem build) |
 | Gráficos | [Chart.js 4.4.1](https://www.chartjs.org/) carregado sob demanda via CDN (jsDelivr) |
-| Armazenamento | `localStorage` (apenas no dispositivo) |
+| Armazenamento | `localStorage` (dados do app) + `IndexedDB` (backup durável silencioso) |
 | PWA | Manifest + Service Worker próprio (cache manual) |
 | Hospedagem | GitHub Pages (qualquer servidor estático) |
 
@@ -83,7 +89,7 @@ Kombistivel/
 ├── styles.css            # Estilos globais (tema escuro, cards, gráficos, modais, toasts)
 ├── app.js                # Toda a lógica da aplicação (armazenamento local, cálculos, UI)
 ├── manifest.json         # Manifest PWA (nome, ícones, cores, display standalone)
-├── service-worker.js     # Cache offline (versão atual: kombistivel-v10)
+├── service-worker.js     # Cache offline (versão atual: kombistivel-v11)
 ├── icons/                # Favicon, ícones PWA (192/512) e versões maskable
 └── .github/
     └── workflows/
@@ -94,7 +100,8 @@ Kombistivel/
 
 | Seção | Responsabilidade |
 |---|---|
-| Storage | Leitura/gravação no `localStorage` (chave única `kombistivel.v1`) |
+| Storage | Leitura/gravação no `localStorage` (chave `kombistivel.v1`) |
+| Backup silencioso | `IndexedDB` (`kombistivel-db`): espelhamento automático e conciliação na inicialização |
 | Helpers | Parsing numérico pt-BR, máscara BRL, escape de HTML, formatação de datas |
 | Cálculos analíticos | Enriquecimento de registros (ciclos/km-l), filtros, KPIs, viabilidade |
 | Dashboard | Renderização dos KPIs, card de viabilidade e gráficos |
@@ -141,8 +148,8 @@ Kombistivel/
 
 ### Armazenamento local
 
-- Chave única: `kombistivel.v1`.
-- Estrutura: `{ vehicles, records, savedAt }`.
+- **`localStorage`** — chave `kombistivel.v1`, estrutura `{ vehicles, records, savedAt }`.
+- **`IndexedDB`** — banco `kombistivel-db`, object store `profile` (chave `main`), mesma estrutura `{ vehicles, records, savedAt }`. Funciona como backup durável silencioso e independe do cache do Service Worker.
 
 ## Cálculos e regras de negócio
 
@@ -169,7 +176,7 @@ Média ponderada global: `Σ(distância dos ciclos) ÷ Σ(litros dos ciclos)` de
 ## PWA e funcionamento offline
 
 - **Manifest**: display `standalone`, tema `#0b0f14`, ícones normais e maskable.
-- **Service Worker** (`kombistivel-v10`):
+- **Service Worker** (`kombistivel-v11`):
   - *Install*: pré-cache dos assets essenciais (HTML, CSS, JS, manifest, ícones).
   - *Activate*: remove caches antigos e assume as páginas imediatamente (`clients.claim`).
   - *Fetch*:
