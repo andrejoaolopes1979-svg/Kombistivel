@@ -490,10 +490,15 @@ main > .view > * + * { margin-top: 14px; }
 /* ---------------- Histórico ---------------- */
 .backup-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 9px;
 }
 .backup-row .btn { height: 44px; font-size: 13px; padding: 0 8px; }
+
+.backup-status {
+  margin: 8px 2px 0;
+  font-size: 12px;
+}
 
 .list-title {
   display: flex;

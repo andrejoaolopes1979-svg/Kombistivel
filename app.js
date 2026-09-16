@@ -56,11 +56,131 @@ function persistProfile(extra = {}) {
   }));
 }
 
-function load() {
+/* ============ Backup silencioso (IndexedDB) ============ */
+
+const DB_NAME = 'kombistivel-db';
+const DB_VERSION = 1;
+const DB_STORE = 'profile';
+const DB_KEY = 'main';
+
+let dbConnection = null;
+let dbWriteQueue = Promise.resolve();
+let lastBackupAt = 0;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getDB() {
+  if (!dbConnection) {
+    dbConnection = openDB()
+      .catch((e) => { dbConnection = null; throw e; });
+  }
+  return dbConnection;
+}
+
+function readBackup() {
+  return getDB().then((db) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(DB_KEY);
+      req.onsuccess = () => {
+        const row = req.result;
+        if (!row) { resolve(null); return; }
+        resolve({
+          vehicles: Array.isArray(row.vehicles) ? row.vehicles : [],
+          records: Array.isArray(row.records) ? row.records : [],
+          savedAt: row.savedAt || 0
+        });
+      };
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  })).catch(() => null);
+}
+
+function writeToDb(snapshot) {
+  return getDB().then((db) => new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put({ id: DB_KEY, ...snapshot });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  })).catch(() => false);
+}
+
+function dbSave(snapshot) {
+  dbWriteQueue = dbWriteQueue.then(() => writeToDb(snapshot));
+  return dbWriteQueue;
+}
+
+function queueBackup() {
+  const snapshot = {
+    vehicles: state.vehicles,
+    records: state.records,
+    savedAt: Date.now()
+  };
+  dbSave(snapshot).then(() => {
+    if (snapshot.savedAt >= lastBackupAt) lastBackupAt = snapshot.savedAt;
+    updateBackupStatus();
+  }).catch(() => {});
+}
+
+function updateBackupStatus() {
+  const statusEl = el('backupStatus');
+  if (!statusEl) return;
+  if (lastBackupAt > 0) {
+    const dt = new Date(lastBackupAt).toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    statusEl.textContent = `Backup automático ativo · última sincronização ${dt}`;
+  } else {
+    statusEl.textContent = 'Backup automático ativo.';
+  }
+}
+
+async function load() {
   const profile = readProfile(storageKey);
-  if (!profile) return;
-  state.vehicles = profile.vehicles;
-  state.records = profile.records;
+  const backup = await readBackup();
+
+  const localTs = profile?.savedAt || 0;
+  const backupTs = backup?.savedAt || 0;
+
+  if (!profile && backup) {
+    state.vehicles = backup.vehicles;
+    state.records = backup.records;
+    persistProfile({ savedAt: backupTs });
+  } else if (profile && backup && backupTs >= localTs) {
+    state.vehicles = backup.vehicles;
+    state.records = backup.records;
+    persistProfile({ savedAt: backupTs });
+  } else if (profile && backup) {
+    state.vehicles = profile.vehicles;
+    state.records = profile.records;
+    await dbSave({ vehicles: profile.vehicles, records: profile.records, savedAt: localTs });
+  } else if (profile) {
+    state.vehicles = profile.vehicles;
+    state.records = profile.records;
+    await dbSave({ vehicles: profile.vehicles, records: profile.records, savedAt: localTs || Date.now() });
+  }
+
+  if (backupTs || localTs) lastBackupAt = Math.max(backupTs, localTs);
+  updateBackupStatus();
 }
 
 function save() {
@@ -69,6 +189,7 @@ function save() {
   } catch (e) {
     toast('Não foi possível salvar os dados localmente.', 'error');
   }
+  queueBackup();
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -1365,6 +1486,16 @@ el('btnCancelEdit').addEventListener('click', () => {
 el('btnExportJson').addEventListener('click', exportJson);
 el('btnExportCsv').addEventListener('click', exportCsv);
 
+el('btnBackupNow').addEventListener('click', () => {
+  if (!state.vehicles.length && !state.records.length) {
+    toast('Não há dados para salvar ainda.', 'error');
+    return;
+  }
+  persistProfile();
+  queueBackup();
+  toast('Dados sincronizados no backup local.', 'success');
+});
+
 el('btnImport').addEventListener('click', () => el('importFile').click());
 el('importFile').addEventListener('change', (ev) => {
   const file = ev.target.files[0];
@@ -1390,7 +1521,9 @@ window.addEventListener('offline', updateOnlineBadge);
 
 /* ================= Boot ================= */
 
-load();
-refreshAll();
-updateOnlineBadge();
+(async function init() {
+  await load();
+  refreshAll();
+  updateOnlineBadge();
+})();
 if (!el('inpData').value) el('inpData').value = nowLocalInputValue();

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kombistivel-v10';
+const CACHE_NAME = 'kombistivel-v11';
 
 const CORE_ASSETS = [
   './',
