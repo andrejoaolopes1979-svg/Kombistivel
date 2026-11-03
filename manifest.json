@@ -1,7 +1,7 @@
 {
-  "name": "Kombistível — Controle de Combustível",
+  "name": "Kombistível — Combustível e Despesas do Veículo",
   "short_name": "Kombistível",
-  "description": "Controle de abastecimentos, consumo (km/l), custos (R$/km) e viabilidade Etanol x Gasolina. Funciona offline.",
+  "description": "Controle de abastecimentos, consumo (km/l), custo total do veículo (aquisição, documentação, IPVA, revisões, peças e serviços) e viabilidade Etanol x Gasolina. Funciona offline.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "./index.html",

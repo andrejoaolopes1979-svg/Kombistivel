@@ -6,6 +6,32 @@ const NEW_VEHICLE = '__new__';
 const FUEL_LABELS = { etanol: 'Etanol', gasolina: 'Gasolina', diesel: 'Diesel', flex: 'Flex' };
 const FUEL_COLORS = { etanol: '#ff8a3d', gasolina: '#38bdf8', diesel: '#a78bfa' };
 
+/* Categorias de despesa do veículo.
+   group: usado no resumo/gráfico; tone: cor do selo. */
+const EXPENSE_CATEGORIES = {
+  aquisicao:     { label: 'Aquisição do veículo',       group: 'aquisicao', tone: 'purple' },
+  documentacao:  { label: 'Documentação / transferência', group: 'documentos', tone: 'blue' },
+  ipva:          { label: 'IPVA',                         group: 'documentos', tone: 'blue' },
+  licenciamento: { label: 'Licenciamento / vistoria',     group: 'documentos', tone: 'blue' },
+  seguro:        { label: 'Seguro',                       group: 'outros',     tone: 'teal' },
+  revisao:       { label: 'Revisão',                      group: 'manutencao', tone: 'orange' },
+  manutencao:    { label: 'Manutenção / mecânica',        group: 'manutencao', tone: 'orange' },
+  pecas:         { label: 'Peças',                        group: 'manutencao', tone: 'orange' },
+  servicos:      { label: 'Serviços / mão de obra',       group: 'manutencao', tone: 'orange' },
+  pneus:         { label: 'Pneus',                        group: 'manutencao', tone: 'orange' },
+  multas:        { label: 'Multas',                       group: 'outros',     tone: 'red' },
+  estacionamento:{ label: 'Estacionamento / pedágio',     group: 'outros',     tone: 'teal' },
+  lavagem:       { label: 'Lavagem / estética',           group: 'outros',     tone: 'teal' },
+  outros:        { label: 'Outros',                       group: 'outros',     tone: 'muted' }
+};
+
+const EXPENSE_GROUPS = {
+  aquisicao:  { label: 'Aquisição',  color: '#a78bfa' },
+  documentos: { label: 'Documentos', color: '#38bdf8' },
+  manutencao: { label: 'Manutenção', color: '#ff8a3d' },
+  outros:     { label: 'Outros',     color: '#2dd4bf' }
+};
+
 const nfBRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const nfKml = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nfKm = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
@@ -18,8 +44,10 @@ const el = (id) => document.getElementById(id);
 let state = {
   vehicles: [],
   records: [],
+  expenses: [],
   filter: { vehicle: 'all', period: 'all' },
   editingId: null,
+  editingExpenseId: null,
   lastLinkedField: 'total'
 };
 
@@ -39,6 +67,7 @@ function readProfile(key) {
     return {
       vehicles: Array.isArray(data.vehicles) ? data.vehicles : [],
       records: Array.isArray(data.records) ? data.records : [],
+      expenses: Array.isArray(data.expenses) ? data.expenses : [],
       savedAt: data.savedAt || 0
     };
   } catch (e) {
@@ -51,6 +80,7 @@ function persistProfile(extra = {}) {
   localStorage.setItem(storageKey, JSON.stringify({
     vehicles: state.vehicles,
     records: state.records,
+    expenses: state.expenses,
     savedAt: Date.now(),
     ...extra
   }));
@@ -100,6 +130,7 @@ function readBackup() {
         resolve({
           vehicles: Array.isArray(row.vehicles) ? row.vehicles : [],
           records: Array.isArray(row.records) ? row.records : [],
+          expenses: Array.isArray(row.expenses) ? row.expenses : [],
           savedAt: row.savedAt || 0
         });
       };
@@ -133,6 +164,7 @@ function queueBackup() {
   const snapshot = {
     vehicles: state.vehicles,
     records: state.records,
+    expenses: state.expenses,
     savedAt: Date.now()
   };
   dbSave(snapshot).then(() => {
@@ -164,19 +196,25 @@ async function load() {
   if (!profile && backup) {
     state.vehicles = backup.vehicles;
     state.records = backup.records;
+    state.expenses = backup.expenses;
     persistProfile({ savedAt: backupTs });
   } else if (profile && backup && backupTs >= localTs) {
     state.vehicles = backup.vehicles;
     state.records = backup.records;
+    state.expenses = backup.expenses;
     persistProfile({ savedAt: backupTs });
   } else if (profile && backup) {
     state.vehicles = profile.vehicles;
     state.records = profile.records;
-    await dbSave({ vehicles: profile.vehicles, records: profile.records, savedAt: localTs });
+    state.expenses = profile.expenses;
+    persistProfile({ savedAt: localTs });
+    await dbSave({ vehicles: profile.vehicles, records: profile.records, expenses: profile.expenses, savedAt: localTs });
   } else if (profile) {
     state.vehicles = profile.vehicles;
     state.records = profile.records;
-    await dbSave({ vehicles: profile.vehicles, records: profile.records, savedAt: localTs || Date.now() });
+    state.expenses = profile.expenses;
+    persistProfile({ savedAt: localTs || Date.now() });
+    await dbSave({ vehicles: profile.vehicles, records: profile.records, expenses: profile.expenses, savedAt: localTs || Date.now() });
   }
 
   if (backupTs || localTs) lastBackupAt = Math.max(backupTs, localTs);
@@ -263,7 +301,33 @@ function lastKmOf(vehicleId, excludeRecordId = null) {
 
 function sortByDateAsc(a, b) {
   if (a.dateISO !== b.dateISO) return a.dateISO < b.dateISO ? -1 : 1;
-  return a.km - b.km;
+  return (num(a.km) || 0) - (num(b.km) || 0);
+}
+
+/* Datas de despesa usam apenas YYYY-MM-DD; parse local evita deslocamento de fuso. */
+function parseDateSafe(value) {
+  if (!value) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T00:00:00`);
+  return new Date(value);
+}
+
+function todayInputValue() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function fmtDateOnlyBR(value) {
+  const d = parseDateSafe(value);
+  return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
+}
+
+function expenseCategory(key) {
+  return EXPENSE_CATEGORIES[key] || EXPENSE_CATEGORIES.outros;
+}
+
+function expenseGroup(key) {
+  return EXPENSE_GROUPS[expenseCategory(key).group] || EXPENSE_GROUPS.outros;
 }
 
 /* ================= Cálculos analíticos ================= */
@@ -338,6 +402,69 @@ function filterRecords() {
   });
 }
 
+function filterExpenses() {
+  const { vehicle, period } = state.filter;
+  const now = new Date();
+  let minTime = null;
+
+  if (period === '30') minTime = now.getTime() - 30 * 864e5;
+  else if (period === '90') minTime = now.getTime() - 90 * 864e5;
+  else if (period === 'ano') minTime = new Date(now.getFullYear(), 0, 1).getTime();
+
+  return state.expenses.filter((x) => {
+    if (vehicle !== 'all' && x.vehicleId !== vehicle) return false;
+    if (minTime !== null) {
+      const t = parseDateSafe(x.dateISO).getTime();
+      if (!Number.isFinite(t) || t < minTime) return false;
+    }
+    return true;
+  });
+}
+
+function expenseTotals(expenses) {
+  let total = 0;
+  let aquisicao = 0;
+  const byCategory = new Map();
+
+  for (const x of expenses) {
+    const value = num(x.value);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    const key = EXPENSE_CATEGORIES[x.category] ? x.category : 'outros';
+    total += value;
+    if (key === 'aquisicao') aquisicao += value;
+    byCategory.set(key, (byCategory.get(key) || 0) + value);
+  }
+
+  return {
+    count: expenses.length,
+    total,
+    aquisicao,
+    useTotal: total - aquisicao,
+    byCategory: [...byCategory.entries()].sort((a, b) => b[1] - a[1])
+  };
+}
+
+function costSummary(records, expenses) {
+  const k = kpisFrom(records);
+  const e = expenseTotals(expenses);
+  const total = k.totalSpent + e.total;
+  const perKm = k.totalDistance > 0 ? (k.totalSpent + e.useTotal) / k.totalDistance : null;
+
+  return {
+    fuel: k.totalSpent,
+    totalExpenses: e.total,
+    useExpenses: e.useTotal,
+    aquisicao: e.aquisicao,
+    total,
+    perKm,
+    distance: k.totalDistance,
+    fuelCount: k.count,
+    expenseCount: e.count,
+    liters: k.totalLiters,
+    byCategory: e.byCategory
+  };
+}
+
 function kpisFrom(records) {
   let totalSpent = 0;
   let totalLiters = 0;
@@ -373,14 +500,33 @@ function kpisFrom(records) {
   };
 }
 
-function monthlyTotals(records) {
+function monthKeyOf(value) {
+  const d = parseDateSafe(value);
+  if (isNaN(d)) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthlySeries(records, expenses) {
   const map = new Map();
+  const bucket = (key) => {
+    if (!map.has(key)) map.set(key, { fuel: 0, use: 0, aquisicao: 0 });
+    return map.get(key);
+  };
+
   for (const r of records) {
-    const d = new Date(r.dateISO);
-    if (isNaN(d)) continue;
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    map.set(key, (map.get(key) || 0) + (num(r.totalValue) || 0));
+    const key = monthKeyOf(r.dateISO);
+    if (!key) continue;
+    bucket(key).fuel += num(r.totalValue) || 0;
   }
+
+  for (const x of expenses) {
+    const key = monthKeyOf(x.dateISO);
+    if (!key) continue;
+    const value = num(x.value) || 0;
+    if (x.category === 'aquisicao') bucket(key).aquisicao += value;
+    else bucket(key).use += value;
+  }
+
   return [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
 }
 
@@ -439,7 +585,8 @@ function analyzeViability(records) {
 
 function renderDashboard() {
   const records = filterRecords();
-  const hasAnyData = state.records.length > 0;
+  const expenses = filterExpenses();
+  const hasAnyData = state.records.length > 0 || state.expenses.length > 0;
 
   el('dashEmpty').classList.toggle('hidden', hasAnyData);
   el('dashContent').classList.toggle('hidden', !hasAnyData);
@@ -449,6 +596,7 @@ function renderDashboard() {
   }
 
   const k = kpisFrom(records);
+  const costs = costSummary(records, expenses);
 
   el('kpiConsumo').textContent = k.avgKml !== null ? nfKml.format(k.avgKml) : '—';
   el('kpiConsumoSub').textContent =
@@ -456,15 +604,28 @@ function renderDashboard() {
       ? `km/l · ${(nfKm.format(k.totalDistance))} km rodados`
       : 'marque “tanque cheio” para calcular';
 
-  el('kpiCustoKm').textContent = k.costPerKm !== null ? nfBRL.format(k.costPerKm) : '—';
+  el('kpiCustoKm').textContent = costs.perKm !== null ? nfBRL.format(costs.perKm) : '—';
+  el('kpiCustoKmSub').textContent = costs.perKm !== null
+    ? 'combustível + despesas de uso'
+    : 'R$/km rodado';
 
   el('kpiGasto').textContent = nfBRL.format(k.totalSpent);
-  el('kpiQtdAbastecimentos').textContent = `${k.count} abastecimento${k.count === 1 ? '' : 's'}`;
+  el('kpiQtdAbastecimentos').textContent =
+    `${k.count} abastecimento${k.count === 1 ? '' : 's'} · ${nfLitros.format(k.totalLiters)} L`;
 
-  el('kpiLitros').textContent = `${nfLitros.format(k.totalLiters)} L`;
+  el('kpiDespesas').textContent = nfBRL.format(costs.totalExpenses);
+  el('kpiDespesasSub').textContent = costs.aquisicao > 0
+    ? `${costs.expenseCount} lançamento${costs.expenseCount === 1 ? '' : 's'} · aquisição ${nfBRL.format(costs.aquisicao)}`
+    : `${costs.expenseCount} lançamento${costs.expenseCount === 1 ? '' : 's'} no período`;
+
+  el('kpiCustoTotal').textContent = nfBRL.format(costs.total);
+  const totalParts = [];
+  if (costs.fuel > 0) totalParts.push(`combustível ${nfBRL.format(costs.fuel)}`);
+  if (costs.totalExpenses > 0) totalParts.push(`despesas ${nfBRL.format(costs.totalExpenses)}`);
+  el('kpiCustoTotalSub').textContent = totalParts.length ? totalParts.join(' + ') : 'combustível + despesas no período';
 
   renderViability(records);
-  renderCharts(records);
+  renderCharts(records, expenses);
 }
 
 function renderViability(records) {
@@ -543,9 +704,9 @@ function loadChartJs() {
   return window._chartJsPromise;
 }
 
-function renderCharts(records) {
+function renderCharts(records, expenses) {
   if (typeof Chart === 'undefined') {
-    loadChartJs().then(() => { if (typeof Chart !== 'undefined') renderCharts(records); });
+    loadChartJs().then(() => { if (typeof Chart !== 'undefined') renderCharts(records, expenses); });
     return;
   }
 
@@ -555,7 +716,7 @@ function renderCharts(records) {
   Chart.defaults.font.family = "'Inter', Roboto, system-ui, sans-serif";
 
   renderConsumptionChart(records, c);
-  renderMonthlyChart(records, c);
+  renderMonthlyChart(records, expenses, c);
 }
 
 function renderConsumptionChart(records, c) {
@@ -649,51 +810,83 @@ function renderConsumptionChart(records, c) {
   });
 }
 
-function renderMonthlyChart(records, c) {
+function renderMonthlyChart(records, expenses, c) {
   const canvas = el('chartMensal');
   const emptyMsg = el('chartMensalEmpty');
 
-  const totals = monthlyTotals(records);
+  const series = monthlySeries(records, expenses);
 
-  emptyMsg.classList.toggle('hidden', totals.length > 0);
-  canvas.parentElement.classList.toggle('hidden', totals.length === 0);
+  emptyMsg.classList.toggle('hidden', series.length > 0);
+  canvas.parentElement.classList.toggle('hidden', series.length === 0);
 
   if (chartMensal) { chartMensal.destroy(); chartMensal = null; }
-  if (!totals.length) return;
+  if (!series.length) return;
 
-  const grad = canvas.getContext('2d').createLinearGradient(0, 0, 0, 230);
-  grad.addColorStop(0, c.green);
-  grad.addColorStop(1, 'rgba(34, 229, 140, 0.25)');
+  const hasAquisicao = series.some(([, v]) => v.aquisicao > 0);
+  const datasets = [
+    {
+      label: 'Combustível',
+      data: series.map(([, v]) => v.fuel),
+      backgroundColor: c.green,
+      hoverBackgroundColor: c.green,
+      stack: 'costs',
+      maxBarThickness: 42
+    },
+    {
+      label: 'Despesas',
+      data: series.map(([, v]) => v.use),
+      backgroundColor: c.orange,
+      hoverBackgroundColor: c.orange,
+      stack: 'costs',
+      maxBarThickness: 42
+    }
+  ];
+
+  if (hasAquisicao) {
+    datasets.push({
+      label: 'Aquisição',
+      data: series.map(([, v]) => v.aquisicao),
+      backgroundColor: c.purple,
+      hoverBackgroundColor: c.purple,
+      stack: 'costs',
+      maxBarThickness: 42
+    });
+  }
 
   chartMensal = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: {
-      labels: totals.map(([key]) => monthLabel(key)),
-      datasets: [{
-        label: 'Gasto (R$)',
-        data: totals.map(([, v]) => v),
-        backgroundColor: grad,
-        hoverBackgroundColor: c.orange,
-        borderRadius: 7,
-        maxBarThickness: 42
-      }]
+      labels: series.map(([key]) => monthLabel(key)),
+      datasets
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { boxWidth: 9, boxHeight: 9, usePointStyle: true, pointStyle: 'circle', padding: 14 }
+        },
         tooltip: {
           backgroundColor: c.card,
           borderColor: c.border,
           borderWidth: 1,
           padding: 11,
-          callbacks: { label: (ctx) => ` ${nfBRL.format(ctx.parsed.y)}` }
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}: ${nfBRL.format(ctx.parsed.y)}`,
+            footer: (items) => {
+              const total = items.reduce((sum, item) => sum + (item.parsed.y || 0), 0);
+              return `Total: ${nfBRL.format(total)}`;
+            }
+          }
         }
       },
       scales: {
-        x: { grid: { display: false } },
+        x: { grid: { display: false }, stacked: true },
         y: {
+          stacked: true,
           grace: '10%',
           grid: { color: c.border },
           ticks: { callback: (v) => 'R$ ' + nfKm.format(v) }
@@ -760,6 +953,297 @@ function renderHistory() {
   }
 }
 
+/* ================= Despesas ================= */
+
+function rebuildExpenseFilterVehicle() {
+  const sel = el('expFilterVehicle');
+  if (!sel) return;
+
+  const prevFilter = state.filter.vehicle;
+  sel.innerHTML = '<option value="all">Todos os veículos</option>';
+  for (const v of state.vehicles) {
+    sel.insertAdjacentHTML('beforeend', `<option value="${v.id}">${esc(vehicleLabel(v))}</option>`);
+  }
+  if ([...sel.options].some((o) => o.value === prevFilter)) sel.value = prevFilter;
+  else { sel.value = 'all'; state.filter.vehicle = 'all'; }
+}
+
+function syncFilterControls() {
+  for (const id of ['filterVehicle', 'expFilterVehicle']) {
+    const s = el(id);
+    if (s) s.value = state.filter.vehicle;
+  }
+  for (const id of ['filterPeriod', 'expFilterPeriod']) {
+    const s = el(id);
+    if (s) s.value = state.filter.period;
+  }
+}
+
+function applyFilter(patch) {
+  Object.assign(state.filter, patch);
+  syncFilterControls();
+  renderDashboard();
+  renderExpenses();
+}
+
+function renderExpenses() {
+  const expenses = [...filterExpenses()].sort((a, b) => {
+    const ta = parseDateSafe(a.dateISO).getTime() || 0;
+    const tb = parseDateSafe(b.dateISO).getTime() || 0;
+    if (ta !== tb) return tb - ta;
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
+
+  const records = filterRecords();
+  const costs = costSummary(records, expenses);
+
+  el('expTotalAll').textContent = nfBRL.format(costs.total);
+  el('expTotalSub').textContent = costs.perKm !== null
+    ? `${nfBRL.format(costs.perKm)}/km · ${nfKm.format(costs.distance)} km rodados no período`
+    : 'Registre abastecimentos com odômetro para calcular o custo por km.';
+
+  const split = [
+    { label: 'Combustível', value: costs.fuel, color: 'var(--green)' },
+    { label: 'Despesas de uso', value: costs.useExpenses, color: 'var(--orange)' },
+    { label: 'Aquisição do veículo', value: costs.aquisicao, color: 'var(--purple)' }
+  ].filter((row) => row.value > 0);
+
+  el('expTotalSplit').innerHTML = split.length
+    ? split.map((row) => `
+        <li>
+          <span class="cost-dot" style="background:${row.color}"></span>
+          <span>${row.label}</span>
+          <b>${nfBRL.format(row.value)}</b>
+        </li>`).join('')
+    : '<li class="cost-empty">Nenhum custo registrado no período.</li>';
+
+  renderExpenseBreakdown(costs.byCategory);
+  renderExpenseList(expenses);
+}
+
+function renderExpenseBreakdown(byCategory) {
+  const wrap = el('expBreakdown');
+  const empty = el('expBreakdownEmpty');
+  const total = byCategory.reduce((sum, [, value]) => sum + value, 0);
+
+  const hasData = byCategory.length > 0;
+  wrap.classList.toggle('hidden', !hasData);
+  empty.classList.toggle('hidden', hasData);
+  if (!hasData) { wrap.innerHTML = ''; return; }
+
+  wrap.innerHTML = byCategory.map(([key, value]) => {
+    const cat = expenseCategory(key);
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    const group = expenseGroup(key);
+    return `
+      <div class="breakdown-row">
+        <div class="breakdown-meta">
+          <span class="cat-tag ${cat.tone}">${esc(cat.label)}</span>
+          <b>${nfBRL.format(value)}</b>
+        </div>
+        <div class="breakdown-bar">
+          <span style="width:${Math.max(pct, 1).toFixed(1)}%;background:${group.color}"></span>
+        </div>
+        <span class="breakdown-pct">${nfPct.format(pct)}% · ${esc(group.label)}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderExpenseList(expenses) {
+  const list = el('expenseList');
+  const empty = el('expenseEmpty');
+  const multiVehicle = state.vehicles.length > 1;
+
+  el('expCount').textContent = expenses.length;
+  empty.classList.toggle('hidden', expenses.length > 0);
+  list.innerHTML = '';
+
+  for (const x of expenses) {
+    const cat = expenseCategory(x.category);
+    const vehicle = getVehicle(x.vehicleId);
+    const meta = [fmtDateOnlyBR(x.dateISO)];
+    if (multiVehicle) meta.push(vehicleLabel(vehicle));
+    const km = num(x.km);
+    if (Number.isFinite(km)) meta.push(`${nfKm.format(km)} km`);
+    const title = x.description ? esc(x.description) : esc(cat.label);
+
+    const card = document.createElement('article');
+    card.className = 'card exp-card';
+    card.innerHTML = `
+      <div class="hist-head">
+        <div class="hist-when">
+          <span class="exp-title">${title}</span>
+          <span class="hist-station">${meta.join(' · ')}</span>
+        </div>
+        <span class="cat-tag ${cat.tone}">${esc(cat.label)}</span>
+      </div>
+      ${x.notes ? `<p class="exp-notes">${esc(x.notes)}</p>` : ''}
+      <div class="hist-foot">
+        <span class="hist-total">${nfBRL.format(num(x.value) || 0)}</span>
+        <div class="hist-actions">
+          <button class="icon-btn" data-action="edit-expense" data-id="${x.id}" aria-label="Editar despesa">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+          <button class="icon-btn danger" data-action="delete-expense" data-id="${x.id}" aria-label="Excluir despesa">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+    list.appendChild(card);
+  }
+}
+
+function rebuildExpenseCategoryOptions() {
+  const sel = el('expCategoria');
+  if (!sel) return;
+  sel.innerHTML = Object.entries(EXPENSE_CATEGORIES)
+    .map(([key, cat]) => `<option value="${key}">${esc(cat.label)}</option>`)
+    .join('');
+}
+
+function rebuildExpenseModalVehicleSelect(selectedId) {
+  const sel = el('expVeiculo');
+  sel.innerHTML = '<option value="" disabled>Escolha ou cadastre…</option>';
+  for (const v of state.vehicles) {
+    sel.insertAdjacentHTML('beforeend', `<option value="${v.id}">${esc(vehicleLabel(v))}</option>`);
+  }
+  sel.insertAdjacentHTML('beforeend', `<option value="${NEW_VEHICLE}">＋ Cadastrar novo veículo</option>`);
+
+  if (selectedId) {
+    sel.value = [...sel.options].some((o) => o.value === selectedId) ? selectedId : '';
+  } else if (state.vehicles.length === 1) {
+    sel.value = state.vehicles[0].id;
+  } else {
+    sel.value = '';
+  }
+}
+
+function onExpenseVehicleChange() {
+  const isNew = el('expVeiculo').value === NEW_VEHICLE;
+  el('expNewVehicleFields').classList.toggle('hidden', !isNew);
+  if (isNew) el('expMarca').focus();
+}
+
+function openExpenseModal(expenseId = null) {
+  const editing = expenseId ? state.expenses.find((x) => x.id === expenseId) : null;
+  state.editingExpenseId = editing ? editing.id : null;
+
+  rebuildExpenseModalVehicleSelect(editing?.vehicleId);
+  el('expNewVehicleFields').classList.add('hidden');
+  el('expCategoria').value = editing?.category || 'aquisicao';
+  el('expData').value = editing ? String(editing.dateISO || '').slice(0, 10) : todayInputValue();
+  el('expDescricao').value = editing?.description || '';
+  el('expValor').value = editing ? formatBRL(num(editing.value) || 0) : '';
+  el('expKm').value = editing && Number.isFinite(num(editing.km)) ? num(editing.km) : '';
+  el('expObs').value = editing?.notes || '';
+  el('expMarca').value = '';
+  el('expModelo').value = '';
+  el('expAno').value = '';
+  el('expCombustivelPadrao').value = 'gasolina';
+
+  el('expenseModalTitle').textContent = editing ? 'Editar despesa' : 'Nova despesa';
+  el('expenseModal').classList.remove('hidden');
+
+  if (editing) el('expValor').focus();
+  else el('expVeiculo').focus();
+}
+
+function closeExpenseModal() {
+  state.editingExpenseId = null;
+  el('expenseModal').classList.add('hidden');
+}
+
+function onSubmitExpense(ev) {
+  ev.preventDefault();
+
+  const vehicleChoice = el('expVeiculo').value;
+  let vehicleId = vehicleChoice;
+
+  if (!vehicleChoice) {
+    toast('Selecione um veículo.', 'error');
+    return;
+  }
+
+  if (vehicleChoice === NEW_VEHICLE) {
+    const marca = el('expMarca').value.trim();
+    const modelo = el('expModelo').value.trim();
+    if (!marca || !modelo) {
+      toast('Informe marca e modelo do novo veículo.', 'error');
+      return;
+    }
+    const ano = parseInt(el('expAno').value, 10);
+    const newVehicle = {
+      id: uid(),
+      marca,
+      modelo,
+      ano: Number.isFinite(ano) ? ano : '',
+      combustivel: el('expCombustivelPadrao').value
+    };
+    state.vehicles.push(newVehicle);
+    vehicleId = newVehicle.id;
+  } else if (!getVehicle(vehicleChoice)) {
+    toast('Veículo inválido.', 'error');
+    return;
+  }
+
+  const category = el('expCategoria').value;
+  if (!EXPENSE_CATEGORIES[category]) {
+    toast('Selecione uma categoria válida.', 'error');
+    return;
+  }
+
+  const dateISO = el('expData').value;
+  if (!dateISO || isNaN(parseDateSafe(dateISO))) {
+    toast('Informe uma data válida.', 'error');
+    return;
+  }
+
+  const value = num(el('expValor').value);
+  if (!Number.isFinite(value) || value <= 0) {
+    toast('Informe o valor da despesa.', 'error');
+    return;
+  }
+
+  const km = num(el('expKm').value);
+  const payload = {
+    vehicleId,
+    dateISO,
+    category,
+    value: round(value, 2),
+    km: Number.isFinite(km) ? km : null,
+    description: el('expDescricao').value.trim(),
+    notes: el('expObs').value.trim()
+  };
+
+  if (state.editingExpenseId) {
+    const idx = state.expenses.findIndex((x) => x.id === state.editingExpenseId);
+    if (idx === -1) { toast('Despesa não encontrada.', 'error'); return; }
+    state.expenses[idx] = { ...state.expenses[idx], ...payload };
+    toast('Despesa atualizada com sucesso.', 'success');
+  } else {
+    state.expenses.push({ id: uid(), createdAt: new Date().toISOString(), ...payload });
+    toast('Despesa salva com sucesso!', 'success');
+  }
+
+  save();
+  refreshAll();
+  closeExpenseModal();
+}
+
+async function onDeleteExpense(expenseId) {
+  const ok = await confirmDialog(
+    'Excluir despesa?',
+    'Esta ação não pode ser desfeita. Os totais do veículo serão recalculados automaticamente.'
+  );
+  if (!ok) return;
+
+  state.expenses = state.expenses.filter((x) => x.id !== expenseId);
+  save();
+  refreshAll();
+  toast('Despesa excluída. Totais recalculados.', 'success');
+}
+
 /* ================= Formulário ================= */
 
 function rebuildVehicleSelects() {
@@ -784,6 +1268,8 @@ function rebuildVehicleSelects() {
 
   if ([...formSel.options].some((o) => o.value === prevForm)) formSel.value = prevForm;
 
+  rebuildExpenseFilterVehicle();
+  syncFilterControls();
   rebuildStationsList();
 }
 
@@ -1087,8 +1573,15 @@ function timestampSlug() {
 }
 
 function exportJson() {
-  if (!state.records.length) { toast('Nada para exportar ainda.', 'error'); return; }
-  const payload = JSON.stringify({ app: 'kombistivel', version: 1, exportedAt: new Date().toISOString(), vehicles: state.vehicles, records: state.records }, null, 2);
+  if (!state.records.length && !state.expenses.length) { toast('Nada para exportar ainda.', 'error'); return; }
+  const payload = JSON.stringify({
+    app: 'kombistivel',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    vehicles: state.vehicles,
+    records: state.records,
+    expenses: state.expenses
+  }, null, 2);
   downloadFile(`kombistivel-backup-${timestampSlug()}.json`, payload, 'application/json;charset=utf-8');
   toast('Backup JSON gerado.', 'success');
 }
@@ -1115,6 +1608,33 @@ function exportCsv() {
 
   downloadFile(`kombistivel-backup-${timestampSlug()}.csv`, '\uFEFF' + lines.join('\n'), 'text/csv;charset=utf-8');
   toast('Backup CSV gerado.', 'success');
+}
+
+function exportExpensesCsv() {
+  if (!state.expenses.length) { toast('Nenhuma despesa para exportar.', 'error'); return; }
+
+  const header = ['data', 'veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'categoria', 'descricao', 'valor', 'km', 'observacoes'];
+  const lines = [header.join(';')];
+
+  const sorted = [...state.expenses].sort((a, b) => parseDateSafe(a.dateISO) - parseDateSafe(b.dateISO));
+  for (const x of sorted) {
+    const v = getVehicle(x.vehicleId) || {};
+    const km = num(x.km);
+    lines.push([
+      String(x.dateISO || '').slice(0, 10),
+      v.marca || '',
+      v.modelo || '',
+      v.ano ?? '',
+      expenseCategory(x.category).label,
+      x.description || '',
+      num(x.value) || 0,
+      Number.isFinite(km) ? km : '',
+      x.notes || ''
+    ].map(csvEscape).join(';'));
+  }
+
+  downloadFile(`kombistivel-despesas-${timestampSlug()}.csv`, '\uFEFF' + lines.join('\n'), 'text/csv;charset=utf-8');
+  toast('CSV de despesas gerado.', 'success');
 }
 
 function parseDecimal(raw) {
@@ -1164,6 +1684,7 @@ async function importFile(file) {
   const text = await file.text();
   let importedRecords = [];
   let importedVehicles = [];
+  let importedExpenses = [];
 
   try {
     if (file.name.toLowerCase().endsWith('.json')) {
@@ -1173,6 +1694,7 @@ async function importFile(file) {
       }
       importedVehicles = data.vehicles;
       importedRecords = data.records;
+      importedExpenses = Array.isArray(data.expenses) ? data.expenses : [];
     } else {
       const rows = parseCsv(text);
       if (rows.length < 2) throw new Error('CSV vazio ou inválido.');
@@ -1267,9 +1789,43 @@ async function importFile(file) {
     newRecords++;
   }
 
+  const existingExpenses = new Set(state.expenses.map((x) => x.id));
+  let newExpenses = 0;
+
+  for (const x of importedExpenses) {
+    if (!x || !x.id || existingExpenses.has(x.id)) { skipped++; continue; }
+    if (!knownIds.has(x.vehicleId)) {
+      const stub = { id: uid(), marca: 'Importado', modelo: 'Sem ficha', ano: '', combustivel: 'gasolina' };
+      state.vehicles.push(stub);
+      knownIds.add(stub.id);
+      newVehicles++;
+    }
+
+    const dateISO = String(x.dateISO || '').slice(0, 10);
+    const value = num(x.value);
+    if (!dateISO || isNaN(parseDateSafe(dateISO)) || !Number.isFinite(value) || value <= 0) {
+      skipped++;
+      continue;
+    }
+
+    state.expenses.push({
+      id: x.id,
+      vehicleId: x.vehicleId,
+      dateISO,
+      category: EXPENSE_CATEGORIES[x.category] ? x.category : 'outros',
+      value: round(value, 2),
+      km: Number.isFinite(num(x.km)) ? num(x.km) : null,
+      description: String(x.description || '').slice(0, 120),
+      notes: String(x.notes || '').slice(0, 500),
+      createdAt: x.createdAt || new Date().toISOString()
+    });
+    existingExpenses.add(x.id);
+    newExpenses++;
+  }
+
   save();
   refreshAll();
-  toast(`Importação concluída: ${newRecords} abastecimentos e ${newVehicles} veículo(s) adicionados.` +
+  toast(`Importação concluída: ${newRecords} abastecimento(s), ${newExpenses} despesa(s) e ${newVehicles} veículo(s) adicionados.` +
     (skipped ? ` ${skipped} registro(s) ignorado(s) (duplicado/inválido).` : ''), 'success');
 }
 
@@ -1334,6 +1890,7 @@ function refreshAll() {
   enrichRecords();
   rebuildVehicleSelects();
   renderDashboard();
+  renderExpenses();
   renderHistory();
 }
 
@@ -1438,21 +1995,35 @@ document.addEventListener('click', (ev) => {
   const goto = ev.target.closest('[data-goto]');
   if (goto) switchView(goto.dataset.goto);
 
+  if (ev.target.closest('[data-open-expense]')) { openExpenseModal(); return; }
+
   const action = ev.target.closest('[data-action]');
   if (!action) return;
   const { action: act, id } = action.dataset;
   if (act === 'edit') startEdit(id);
   if (act === 'delete') onDeleteRecord(id);
+  if (act === 'edit-expense') openExpenseModal(id);
+  if (act === 'delete-expense') onDeleteExpense(id);
 });
 
-el('filterVehicle').addEventListener('change', (ev) => {
-  state.filter.vehicle = ev.target.value;
-  renderDashboard();
-});
+el('filterVehicle').addEventListener('change', (ev) => applyFilter({ vehicle: ev.target.value }));
+el('expFilterVehicle').addEventListener('change', (ev) => applyFilter({ vehicle: ev.target.value }));
 
-el('filterPeriod').addEventListener('change', (ev) => {
-  state.filter.period = ev.target.value;
-  renderDashboard();
+el('filterPeriod').addEventListener('change', (ev) => applyFilter({ period: ev.target.value }));
+el('expFilterPeriod').addEventListener('change', (ev) => applyFilter({ period: ev.target.value }));
+
+el('btnNewExpense').addEventListener('click', () => openExpenseModal());
+el('btnExportExpensesCsv').addEventListener('click', exportExpensesCsv);
+
+el('formDespesa').addEventListener('submit', onSubmitExpense);
+el('expVeiculo').addEventListener('change', onExpenseVehicleChange);
+el('expCancel').addEventListener('click', closeExpenseModal);
+el('expenseModal').addEventListener('click', (ev) => {
+  if (ev.target === el('expenseModal')) closeExpenseModal();
+});
+el('expValor').addEventListener('input', () => {
+  applyCurrencyMask(el('expValor'));
+  el('expValor').setSelectionRange(el('expValor').value.length, el('expValor').value.length);
 });
 
 el('inpVeiculo').addEventListener('change', onVehicleChange);
@@ -1473,7 +2044,6 @@ el('inpTotal').addEventListener('input', () => {
   linkValueFields('total');
 });
 el('inpLitros').addEventListener('input', () => linkValueFields('litros'));
-el('inpLitros').addEventListener('input', () => linkValueFields('litros'));
 
 el('formAbastecimento').addEventListener('submit', onSubmitForm);
 
@@ -1487,7 +2057,7 @@ el('btnExportJson').addEventListener('click', exportJson);
 el('btnExportCsv').addEventListener('click', exportCsv);
 
 el('btnBackupNow').addEventListener('click', () => {
-  if (!state.vehicles.length && !state.records.length) {
+  if (!state.vehicles.length && !state.records.length && !state.expenses.length) {
     toast('Não há dados para salvar ainda.', 'error');
     return;
   }
@@ -1522,6 +2092,7 @@ window.addEventListener('offline', updateOnlineBadge);
 /* ================= Boot ================= */
 
 (async function init() {
+  rebuildExpenseCategoryOptions();
   await load();
   refreshAll();
   updateOnlineBadge();

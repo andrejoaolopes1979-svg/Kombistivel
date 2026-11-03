@@ -1,6 +1,6 @@
-# Kombistível — Controle de Combustível
+# Kombistível — Combustível e Despesas do Veículo
 
-PWA (Progressive Web App) para controle de abastecimentos, consumo médio (km/l), custo por quilômetro e análise de viabilidade **Etanol × Gasolina**. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage` + backup durável silencioso em `IndexedDB`) e backup manual via arquivo JSON.
+PWA (Progressive Web App) para controle de **todos os gastos do veículo**: abastecimentos e consumo médio (km/l), custo por quilômetro, custo total do veículo e análise de viabilidade **Etanol × Gasolina**. Além do combustível, registra aquisição, documentação, IPVA, licenciamento, seguro, revisões, manutenção, peças, serviços, pneus, multas e outros gastos, com resumo por categoria. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage` + backup durável silencioso em `IndexedDB`) e backup manual via arquivo JSON/CSV.
 
 ---
 
@@ -24,20 +24,30 @@ PWA (Progressive Web App) para controle de abastecimentos, consumo médio (km/l)
 O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para motoristas que querem acompanhar a saúde financeira e o desempenho dos seus veículos:
 
 - Registro de abastecimentos com odômetro, preço, litros e posto.
-- Indicadores automáticos: consumo médio, R$/km, gasto total e litros abastecidos.
+- Registro de despesas do veículo por categoria: aquisição, documentação, IPVA, licenciamento, seguro, revisão, manutenção, peças, serviços, pneus, multas, estacionamento/pedágio, lavagem e outros.
+- Indicadores automáticos: consumo médio, R$/km combinado, gasto com combustível, despesas e custo total do veículo.
 - Comparação automática entre Etanol e Gasolina usando consumo **real** do veículo.
-- Gráficos de evolução do consumo e gastos mensais.
+- Gráficos de evolução do consumo e gastos mensais (combustível + despesas + aquisição).
 - Suporte a múltiplos veículos.
 - Dados salvos somente no dispositivo (`localStorage` + backup em `IndexedDB`), sem conta ou nuvem.
 
 ## Funcionalidades
 
 ### Painel (Dashboard)
-- Filtros combináveis por **veículo** e **período** (30 dias, 90 dias, ano atual, histórico completo).
-- KPIs: consumo médio (km/l), custo por km (R$/km), gasto total e litros abastecidos no período.
+- Filtros combináveis por **veículo** e **período** (30 dias, 90 dias, ano atual, histórico completo), compartilhados com a aba Despesas.
+- KPIs: consumo médio (km/l), custo por km (combustível + despesas de uso), gasto com combustível (com litros abastecidos), despesas e **custo total do veículo** no período.
 - Card **Etanol × Gasolina** com veredito, barra comparativa, paridade de equilíbrio e vantagem estimada.
 - Gráfico de linha da evolução do consumo (km/l por ciclo de tanque cheio).
-- Gráfico de barras dos gastos mensais.
+- Gráfico de barras empilhadas dos gastos mensais: combustível, despesas e aquisição.
+
+### Despesas do veículo
+- Nova aba **Despesas**, com filtros de veículo e período sincronizados com o painel.
+- Cadastro/edição/exclusão de despesas com veículo, categoria, data, valor, descrição, KM opcional e observações.
+- Categorias: aquisição do veículo, documentação/transferência, IPVA, licenciamento/vistoria, seguro, revisão, manutenção/mecânica, peças, serviços/mão de obra, pneus, multas, estacionamento/pedágio, lavagem/estética e outros.
+- Resumo do **custo total do veículo** (combustível + despesas de uso + aquisição) e do custo por km no período.
+- Card **Para onde foi o dinheiro**: quebra das despesas por categoria, com valor, percentual e grupo (Aquisição, Documentos, Manutenção, Outros).
+- Lista de despesas do mais recente ao mais antigo, com edição e exclusão.
+- Exportação das despesas em **CSV**.
 
 ### Novo abastecimento
 - Seleção de veículo existente ou cadastro inline (marca, modelo, ano, combustível padrão).
@@ -56,8 +66,8 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 - Botão **Salvar agora**, que sincroniza o backup local manualmente a qualquer momento.
 
 ### Armazenamento e backup
-- Todos os dados (veículos + abastecimentos) ficam salvos exclusivamente no dispositivo — sem conta, sem nuvem.
-- **`localStorage`** (chave `kombistivel.v1`): leitura instantânea e volume interno do app. Estrutura `{ vehicles, records, savedAt }`.
+- Todos os dados (veículos + abastecimentos + despesas) ficam salvos exclusivamente no dispositivo — sem conta, sem nuvem.
+- **`localStorage`** (chave `kombistivel.v1`): leitura instantânea e volume interno do app. Estrutura `{ vehicles, records, expenses, savedAt }`.
 - **`IndexedDB`** (banco `kombistivel-db`, store `profile`): **backup durável silencioso**. A cada gravação o estado é espelhado automaticamente, sem permissões ou prompts.
 - Na abertura, o app concilia as duas fontes pelo `savedAt` mais recente — a mais atual vence e sincroniza a outra. Assim, limpar o cache do Service Worker não apaga os dados: eles são restaurados do `IndexedDB` e o `localStorage` é recriado sozinho.
 - Indicador discreto **"Backup automático ativo · última sincronização …"** logo abaixo dos botões de backup na aba Histórico.
@@ -85,11 +95,11 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 
 ```
 Kombistivel/
-├── index.html            # Única página (SPA simples): dashboard, formulário, histórico, modais
+├── index.html            # Única página (SPA simples): dashboard, abastecimento, despesas, histórico, modais
 ├── styles.css            # Estilos globais (tema escuro, cards, gráficos, modais, toasts)
 ├── app.js                # Toda a lógica da aplicação (armazenamento local, cálculos, UI)
 ├── manifest.json         # Manifest PWA (nome, ícones, cores, display standalone)
-├── service-worker.js     # Cache offline (versão atual: kombistivel-v11)
+├── service-worker.js     # Cache offline (versão atual: kombistivel-v12)
 ├── icons/                # Favicon, ícones PWA (192/512) e versões maskable
 └── .github/
     └── workflows/
@@ -103,13 +113,14 @@ Kombistivel/
 | Storage | Leitura/gravação no `localStorage` (chave `kombistivel.v1`) |
 | Backup silencioso | `IndexedDB` (`kombistivel-db`): espelhamento automático e conciliação na inicialização |
 | Helpers | Parsing numérico pt-BR, máscara BRL, escape de HTML, formatação de datas |
-| Cálculos analíticos | Enriquecimento de registros (ciclos/km-l), filtros, KPIs, viabilidade |
+| Cálculos analíticos | Enriquecimento de registros (ciclos/km-l), filtros, KPIs, custos combinados, viabilidade |
 | Dashboard | Renderização dos KPIs, card de viabilidade e gráficos |
 | Histórico | Renderização da lista de abastecimentos |
+| Despesas | Categorias, filtros, resumo por categoria, lista, CRUD e CSV |
 | Formulário | Veículos (selects), vínculo preço↔litros↔total, validações e submissão |
 | CRUD histórico | Exclusão com confirmação |
 | Edição de veículo | Modal de edição de ficha do veículo |
-| Exportação/Importação | JSON e CSV (exportador e parser CSV próprio) |
+| Exportação/Importação | JSON (veículos, abastecimentos e despesas) e CSV (abastecimentos e despesas) |
 | UI geral | Troca de views, modais de confirmação, toasts, badge offline |
 | PWA | Registro do Service Worker e banner de instalação |
 | Eventos / Boot | Ligação de todos os listeners e carregamento inicial dos dados locais |
@@ -146,10 +157,27 @@ Kombistivel/
 }
 ```
 
+### Despesa (`expenses[]`)
+
+```json
+{
+  "id": "exp456",
+  "createdAt": "2025-01-20T12:00:00.000Z",
+  "vehicleId": "abc123",
+  "dateISO": "2025-01-20",              // data (YYYY-MM-DD)
+  "category": "revisao",               // aquisicao | documentacao | ipva | licenciamento | seguro | revisao | manutencao | pecas | servicos | pneus | multas | estacionamento | lavagem | outros
+  "value": 890.00,
+  "km": 30000,                         // opcional
+  "description": "Revisão dos 30.000 km",
+  "notes": "Óleo, filtro de óleo e velas" // opcional
+}
+```
+
 ### Armazenamento local
 
-- **`localStorage`** — chave `kombistivel.v1`, estrutura `{ vehicles, records, savedAt }`.
-- **`IndexedDB`** — banco `kombistivel-db`, object store `profile` (chave `main`), mesma estrutura `{ vehicles, records, savedAt }`. Funciona como backup durável silencioso e independe do cache do Service Worker.
+- **`localStorage`** — chave `kombistivel.v1`, estrutura `{ vehicles, records, expenses, savedAt }`.
+- **`IndexedDB`** — banco `kombistivel-db`, object store `profile` (chave `main`), mesma estrutura `{ vehicles, records, expenses, savedAt }`. Funciona como backup durável silencioso e independe do cache do Service Worker.
+- Dados salvos por versões anteriores (sem `expenses`) são carregados normalmente; o campo é inicializado como lista vazia.
 
 ## Cálculos e regras de negócio
 
@@ -163,9 +191,23 @@ Média ponderada global: `Σ(distância dos ciclos) ÷ Σ(litros dos ciclos)` de
 
 ### Custo por km
 
-`Σ(total pago dos registros com distância conhecida) ÷ Σ(distância entre abastecimentos consecutivos)`.
+**Combustível + despesas de uso:** `(Σ total pago em combustível + Σ despesas de uso) ÷ Σ distância entre abastecimentos consecutivos`.
 
-> Distância só é considerada quando o odômetro cresce em relação ao abastecimento anterior.
+- Despesas de uso = todas as despesas **exceto aquisição do veículo** (documentação, IPVA, revisões, peças, serviços etc.).
+- A aquisição é somada apenas no **custo total do veículo**, pois distorce o custo por km rodado.
+- Distância só é considerada quando o odômetro cresce em relação ao abastecimento anterior.
+
+### Custo total do veículo
+
+`Σ combustível + Σ despesas (incluindo aquisição)` dentro do filtro de veículo/período.
+
+### Resumo por categoria
+
+As despesas são agrupadas por categoria e ordenadas do maior para o menor valor, com percentual sobre o total de despesas. Para a barra visual, cada categoria pertence a um grupo: **Aquisição**, **Documentos**, **Manutenção** ou **Outros**.
+
+### Gastos mensais
+
+O gráfico soma, por mês, combustível + despesas de uso + aquisição em barras empilhadas, permitindo comparar o custo real de cada mês.
 
 ### Viabilidade Etanol × Gasolina
 
@@ -176,7 +218,7 @@ Média ponderada global: `Σ(distância dos ciclos) ÷ Σ(litros dos ciclos)` de
 ## PWA e funcionamento offline
 
 - **Manifest**: display `standalone`, tema `#0b0f14`, ícones normais e maskable.
-- **Service Worker** (`kombistivel-v11`):
+- **Service Worker** (`kombistivel-v12`):
   - *Install*: pré-cache dos assets essenciais (HTML, CSS, JS, manifest, ícones).
   - *Activate*: remove caches antigos e assume as páginas imediatamente (`clients.claim`).
   - *Fetch*:
@@ -189,14 +231,16 @@ Média ponderada global: `Σ(distância dos ciclos) ÷ Σ(litros dos ciclos)` de
 ## Importação e exportação
 
 ### Exportar
-- **JSON**: estrutura completa `{app, version, exportedAt, vehicles, records}` — formato oficial para backup/restauração.
-- **CSV**: separador `;` com BOM UTF-8 e colunas `data_iso;veiculo_marca;veiculo_modelo;veiculo_ano;combustivel;km;preco_litro;litros;valor_total;tanque_cheio;posto`.
+- **JSON**: estrutura completa `{app, version, exportedAt, vehicles, records, expenses}` — formato oficial para backup/restauração.
+- **CSV de abastecimentos**: separador `;` com BOM UTF-8 e colunas `data_iso;veiculo_marca;veiculo_modelo;veiculo_ano;combustivel;km;preco_litro;litros;valor_total;tanque_cheio;posto`.
+- **CSV de despesas** (aba Despesas): colunas `data;veiculo_marca;veiculo_modelo;veiculo_ano;categoria;descricao;valor;km;observacoes`.
 
 ### Importar
-- Aceita `.json` ou `.csv` (detecta `;` ou `,` como delimitador).
-- Deduplicação por `id` de registro e `id` de veículo — nada é duplicado em reimportações.
+- Aceita `.json` ou `.csv` de abastecimentos (detecta `;` ou `,` como delimitador).
+- JSON importa também as despesas. Backups antigos (sem o campo `expenses`) continuam funcionando.
+- Deduplicação por `id` de abastecimento, `id` de despesa e `id` de veículo — nada é duplicado em reimportações.
 - CSV: veículos são agrupados por marca+modelo+ano (criados automaticamente se novos); colunas obrigatórias: `data_iso`, `combustivel`, `km`.
-- Registros inválidos (sem data ou KM) são ignorados e reportados no resumo final.
+- Registros inválidos (sem data, valor ou KM quando obrigatório) são ignorados e reportados no resumo final.
 
 ## Executando o projeto
 

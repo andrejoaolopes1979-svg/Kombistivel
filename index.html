@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Kombistível — Controle de Combustível</title>
-  <meta name="description" content="PWA offline para controle de abastecimentos, consumo (km/l), custos e viabilidade Etanol x Gasolina." />
+  <title>Kombistível — Combustível e Despesas do Veículo</title>
+  <meta name="description" content="PWA offline para controle de abastecimentos, consumo (km/l), custo total do veículo (aquisição, documentação, IPVA, revisões, peças e serviços) e viabilidade Etanol x Gasolina." />
   <meta name="theme-color" content="#0b0f14" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/png" href="icons/favicon-64.png" />
@@ -28,7 +28,7 @@
       </span>
       <div class="brand-text">
         <h1>Kombistível</h1>
-        <p>Controle de combustível</p>
+        <p>Combustível e despesas do veículo</p>
       </div>
     </div>
     <span id="offlineBadge" class="offline-badge hidden" role="status">Offline</span>
@@ -58,8 +58,9 @@
       <div id="dashEmpty" class="empty-state card hidden">
         <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 3s6.3 6.6 6.3 11a6.3 6.3 0 1 1-12.6 0C5.7 9.6 12 3 12 3z"/><path d="M12 13v4"/></svg>
         <h2>Sem dados por aqui</h2>
-        <p>Registre seu primeiro abastecimento para ver os indicadores.</p>
+        <p>Registre seu primeiro abastecimento ou uma despesa do veículo para ver os indicadores.</p>
         <button class="btn btn-primary btn-block" data-goto="novo">Registrar abastecimento</button>
+        <button class="btn btn-secondary btn-block" data-goto="despesas">Lançar despesa</button>
       </div>
 
       <div id="dashContent" class="hidden">
@@ -75,19 +76,25 @@
             <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
             <span class="kpi-label">Custo por km</span>
             <strong id="kpiCustoKm">—</strong>
-            <small>R$/km rodado</small>
+            <small id="kpiCustoKmSub">R$/km rodado</small>
           </article>
           <article class="card kpi kpi-blue">
             <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
-            <span class="kpi-label">Gasto total</span>
+            <span class="kpi-label">Combustível</span>
             <strong id="kpiGasto">—</strong>
             <small id="kpiQtdAbastecimentos">&nbsp;</small>
           </article>
           <article class="card kpi kpi-purple">
-            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.7s6.3 6.6 6.3 11a6.3 6.3 0 1 1-12.6 0c0-4.4 6.3-11 6.3-11z"/></svg></span>
-            <span class="kpi-label">Litros abastecidos</span>
-            <strong id="kpiLitros">—</strong>
-            <small>no período</small>
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h6"/></svg></span>
+            <span class="kpi-label">Despesas</span>
+            <strong id="kpiDespesas">—</strong>
+            <small id="kpiDespesasSub">&nbsp;</small>
+          </article>
+          <article class="card kpi kpi-teal kpi-wide">
+            <span class="kpi-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v12H3z"/><path d="M3 7l2-4h14l2 4"/><circle cx="12" cy="13" r="2.5"/></svg></span>
+            <span class="kpi-label">Custo total do veículo</span>
+            <strong id="kpiCustoTotal">—</strong>
+            <small id="kpiCustoTotalSub">combustível + despesas no período</small>
           </article>
         </div>
 
@@ -125,7 +132,7 @@
 
         <article class="card chart-card">
           <h2>Gastos mensais</h2>
-          <p class="chart-sub">total pago (R$) por mês</p>
+          <p class="chart-sub">combustível + despesas (R$) por mês</p>
           <div class="chart-wrap"><canvas id="chartMensal" role="img" aria-label="Gráfico de barras dos gastos mensais"></canvas></div>
           <p id="chartMensalEmpty" class="hint hidden">Sem gastos registrados no período filtrado.</p>
         </article>
@@ -261,6 +268,64 @@
       </form>
     </section>
 
+    <!-- ============ VIEW: DESPESAS ============ -->
+    <section id="view-despesas" class="view" aria-label="Despesas do veículo">
+
+      <div class="filters card">
+        <div class="field compact">
+          <label for="expFilterVehicle">Veículo</label>
+          <select id="expFilterVehicle"></select>
+        </div>
+        <div class="field compact">
+          <label for="expFilterPeriod">Período</label>
+          <select id="expFilterPeriod">
+            <option value="30">Últimos 30 dias</option>
+            <option value="90">Últimos 3 meses</option>
+            <option value="ano">Ano atual</option>
+            <option value="all" selected>Todo o histórico</option>
+          </select>
+        </div>
+      </div>
+
+      <article class="card cost-summary" aria-label="Resumo de custos">
+        <span class="kpi-label">Custo total do veículo</span>
+        <strong id="expTotalAll" class="cost-total">—</strong>
+        <p id="expTotalSub" class="cost-sub">—</p>
+        <ul id="expTotalSplit" class="cost-split"></ul>
+      </article>
+
+      <div class="section-head">
+        <h2>Para onde foi o dinheiro</h2>
+        <span class="section-sub">despesas por categoria</span>
+      </div>
+      <div id="expBreakdown" class="card breakdown"></div>
+      <div id="expBreakdownEmpty" class="empty-state card hidden">
+        <h2>Sem despesas no período</h2>
+        <p>Use o botão “Nova despesa” para começar.</p>
+      </div>
+
+      <div class="exp-actions">
+        <button id="btnNewExpense" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nova despesa
+        </button>
+        <button id="btnExportExpensesCsv" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          CSV
+        </button>
+      </div>
+
+      <h2 class="list-title">Despesas <span id="expCount" class="count-chip">0</span></h2>
+      <div id="expenseList" class="history-list" aria-live="polite"></div>
+
+      <div id="expenseEmpty" class="empty-state card hidden">
+        <svg viewBox="0 0 24 24" width="42" height="42" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h4"/></svg>
+        <h2>Nenhuma despesa</h2>
+        <p>Registre valor de aquisição, documentação, IPVA, revisões, peças e serviços feitos no veículo.</p>
+        <button class="btn btn-primary btn-block" data-open-expense>Lançar despesa</button>
+      </div>
+    </section>
+
     <!-- ============ VIEW: HISTÓRICO ============ -->
     <section id="view-historico" class="view" aria-label="Histórico de abastecimentos">
 
@@ -306,6 +371,10 @@
     <button class="nav-btn nav-fab" data-view="novo" aria-label="Novo abastecimento">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       <span>Abastecer</span>
+    </button>
+    <button class="nav-btn" data-view="despesas">
+      <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h4"/></svg>
+      <span>Despesas</span>
     </button>
     <button class="nav-btn" data-view="historico">
       <svg viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>
@@ -354,6 +423,83 @@
         <div class="modal-actions">
           <button type="button" id="edCancel" class="btn btn-ghost">Cancelar</button>
           <button type="submit" class="btn btn-primary">Salvar alterações</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="expenseModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="expenseModalTitle">
+    <div class="modal card modal-wide">
+      <h2 id="expenseModalTitle">Nova despesa</h2>
+      <form id="formDespesa" novalidate>
+        <div class="field">
+          <label for="expVeiculo">Veículo</label>
+          <select id="expVeiculo" required></select>
+        </div>
+
+        <div id="expNewVehicleFields" class="new-vehicle-fields hidden">
+          <div class="field-row">
+            <div class="field">
+              <label for="expMarca">Marca</label>
+              <input type="text" id="expMarca" placeholder="Ex.: Fiat" autocomplete="off" maxlength="40" />
+            </div>
+            <div class="field">
+              <label for="expModelo">Modelo</label>
+              <input type="text" id="expModelo" placeholder="Ex.: Argo 1.0" autocomplete="off" maxlength="60" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="expAno">Ano</label>
+              <input type="number" id="expAno" inputmode="numeric" min="1950" max="2100" step="1" placeholder="2020" />
+            </div>
+            <div class="field">
+              <label for="expCombustivelPadrao">Combustível padrão</label>
+              <select id="expCombustivelPadrao">
+                <option value="gasolina">Gasolina</option>
+                <option value="etanol">Etanol</option>
+                <option value="flex">Flex (Gasolina + Etanol)</option>
+                <option value="diesel">Diesel</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="expCategoria">Categoria</label>
+            <select id="expCategoria"></select>
+          </div>
+          <div class="field">
+            <label for="expData">Data</label>
+            <input type="date" id="expData" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="expDescricao">Descrição</label>
+          <input type="text" id="expDescricao" placeholder="Ex.: Revisão dos 30.000 km" autocomplete="off" maxlength="120" />
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="expValor">Valor (R$)</label>
+            <input type="text" id="expValor" inputmode="decimal" autocomplete="off" placeholder="0,00" required />
+          </div>
+          <div class="field">
+            <label for="expKm">KM (opcional)</label>
+            <input type="number" id="expKm" inputmode="numeric" min="0" step="1" placeholder="0" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="expObs">Observações (opcional)</label>
+          <textarea id="expObs" rows="2" maxlength="500" placeholder="Ex.: troca de óleo e filtros"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="expCancel" class="btn btn-ghost">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar despesa</button>
         </div>
       </form>
     </div>
