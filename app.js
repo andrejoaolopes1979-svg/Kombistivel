@@ -1606,8 +1606,8 @@ function exportCsv() {
     ].map(csvEscape).join(';'));
   }
 
-  downloadFile(`kombistivel-backup-${timestampSlug()}.csv`, '\uFEFF' + lines.join('\n'), 'text/csv;charset=utf-8');
-  toast('Backup CSV gerado.', 'success');
+  downloadFile(`kombistivel-abastecimentos-${timestampSlug()}.csv`, '\uFEFF' + lines.join('\n'), 'text/csv;charset=utf-8');
+  toast('CSV de abastecimentos gerado.', 'success');
 }
 
 function exportExpensesCsv() {

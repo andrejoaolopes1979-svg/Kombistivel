@@ -1,6 +1,6 @@
 # Kombistível — Combustível e Despesas do Veículo
 
-PWA (Progressive Web App) para controle de **todos os gastos do veículo**: abastecimentos e consumo médio (km/l), custo por quilômetro, custo total do veículo e análise de viabilidade **Etanol × Gasolina**. Além do combustível, registra aquisição, documentação, IPVA, licenciamento, seguro, revisões, manutenção, peças, serviços, pneus, multas e outros gastos, com resumo por categoria. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage` + backup durável silencioso em `IndexedDB`) e backup manual via arquivo JSON/CSV.
+PWA (Progressive Web App) para controle de **todos os gastos do veículo**: abastecimentos e consumo médio (km/l), custo por quilômetro, custo total do veículo e análise de viabilidade **Etanol × Gasolina**. Além do combustível, registra aquisição, documentação, IPVA, licenciamento, seguro, revisões, manutenção, peças, serviços, pneus, multas e outros gastos, com resumo por categoria. Funciona 100% offline, com todos os dados salvos exclusivamente no armazenamento local do dispositivo (`localStorage` + backup durável silencioso em `IndexedDB`) e backup manual completo via arquivo JSON (o CSV é apenas exportação parcial para análise).
 
 ---
 
@@ -62,7 +62,7 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 ### Histórico
 - Lista ordenada do mais recente ao mais antigo, com contagem.
 - Edição e exclusão (com diálogo de confirmação) de cada registro.
-- Botões de exportação JSON / CSV e importação.
+- Botões de exportação JSON (backup completo) / CSV (abastecimentos) e importação.
 - Botão **Salvar agora**, que sincroniza o backup local manualmente a qualquer momento.
 
 ### Armazenamento e backup
@@ -71,7 +71,9 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 - **`IndexedDB`** (banco `kombistivel-db`, store `profile`): **backup durável silencioso**. A cada gravação o estado é espelhado automaticamente, sem permissões ou prompts.
 - Na abertura, o app concilia as duas fontes pelo `savedAt` mais recente — a mais atual vence e sincroniza a outra. Assim, limpar o cache do Service Worker não apaga os dados: eles são restaurados do `IndexedDB` e o `localStorage` é recriado sozinho.
 - Indicador discreto **"Backup automático ativo · última sincronização …"** logo abaixo dos botões de backup na aba Histórico.
-- Backups manuais adicionais: botão **Salvar agora** (força a sincronização do backup local) e exportação **JSON/CSV** (download de arquivo), com restauração pelo botão **Importar**.
+- Backups manuais adicionais: botão **Salvar agora** (força a sincronização do backup local) e exportação de arquivo, com restauração pelo botão **Importar**:
+  - **JSON** (`kombistivel-backup-*.json`): backup completo — contém veículos, abastecimentos e despesas.
+  - **CSV** (`kombistivel-abastecimentos-*.csv` e `kombistivel-despesas-*.csv`): exportações parciais, apenas para análise/planilha — não substituem o backup completo em JSON.
 
 > Limpar apenas o *cache* (Cache API/Service Worker) não afeta o `IndexedDB`. Limpar "dados de sites/navegação" completos apaga também `localStorage` e `IndexedDB` — nesse cenário, use o backup **JSON** exportado.
 
@@ -120,7 +122,7 @@ Kombistivel/
 | Formulário | Veículos (selects), vínculo preço↔litros↔total, validações e submissão |
 | CRUD histórico | Exclusão com confirmação |
 | Edição de veículo | Modal de edição de ficha do veículo |
-| Exportação/Importação | JSON (veículos, abastecimentos e despesas) e CSV (abastecimentos e despesas) |
+| Exportação/Importação | JSON completo (veículos, abastecimentos e despesas) e CSV parcial (abastecimentos e despesas) |
 | UI geral | Troca de views, modais de confirmação, toasts, badge offline |
 | PWA | Registro do Service Worker e banner de instalação |
 | Eventos / Boot | Ligação de todos os listeners e carregamento inicial dos dados locais |
@@ -231,9 +233,11 @@ O gráfico soma, por mês, combustível + despesas de uso + aquisição em barra
 ## Importação e exportação
 
 ### Exportar
-- **JSON**: estrutura completa `{app, version, exportedAt, vehicles, records, expenses}` — formato oficial para backup/restauração.
-- **CSV de abastecimentos**: separador `;` com BOM UTF-8 e colunas `data_iso;veiculo_marca;veiculo_modelo;veiculo_ano;combustivel;km;preco_litro;litros;valor_total;tanque_cheio;posto`.
-- **CSV de despesas** (aba Despesas): colunas `data;veiculo_marca;veiculo_modelo;veiculo_ano;categoria;descricao;valor;km;observacoes`.
+- **JSON** (`kombistivel-backup-*.json`): estrutura completa `{app, version, exportedAt, vehicles, records, expenses}` — formato oficial para backup/restauração e único que contém **todos** os dados.
+- **CSV de abastecimentos** (`kombistivel-abastecimentos-*.csv`): exportação parcial, apenas dos abastecimentos; separador `;` com BOM UTF-8 e colunas `data_iso;veiculo_marca;veiculo_modelo;veiculo_ano;combustivel;km;preco_litro;litros;valor_total;tanque_cheio;posto`.
+- **CSV de despesas** (`kombistivel-despesas-*.csv`, aba Despesas): exportação parcial, apenas das despesas; colunas `data;veiculo_marca;veiculo_modelo;veiculo_ano;categoria;descricao;valor;km;observacoes`.
+
+> Os arquivos CSV são recortes para análise e não incluem veículos nem o conjunto completo de dados. Para backup/restauração, use o **JSON** (ou o backup automático em `IndexedDB`).
 
 ### Importar
 - Aceita `.json` ou `.csv` de abastecimentos (detecta `;` ou `,` como delimitador).
