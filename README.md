@@ -55,6 +55,7 @@ O Kombistível é um aplicativo web leve (sem build, sem framework) voltado para
 - Máscara monetária em BRL nos campos de preço e total pago.
 - Cálculo automático: informa *total pago* → calcula litros; informa *litros* → calcula total.
 - Validações: KM não pode ser inferior à última registrada do veículo, data válida, preço > 0.
+- Ao **editar** um abastecimento anterior, a KM é validada entre os registros vizinhos (anterior e próximo) na ordem cronológica — corrigir apenas valor/digitação não é bloqueado por um registro posterior com KM maior.
 - Sugestão automática do combustível padrão do veículo selecionado.
 - Flag **Tanque cheio**, usada para calcular o km/l com precisão.
 - Campo opcional de posto com autocomplete (datalist alimentado pelos postos já usados).

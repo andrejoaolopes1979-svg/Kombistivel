@@ -299,6 +299,30 @@ function lastKmOf(vehicleId, excludeRecordId = null) {
   return kms.length ? Math.max(...kms) : null;
 }
 
+/*
+ * Limites de odômetro para edição: considera apenas os registros vizinhos
+ * na ordem cronológica. Assim, corrigir um abastecimento antigo não é
+ * bloqueado por um registro posterior com KM maior.
+ */
+function kmBoundsFor(vehicleId, excludeRecordId, dateISO) {
+  const others = state.records
+    .filter((r) => r.vehicleId === vehicleId && r.id !== excludeRecordId)
+    .slice()
+    .sort(sortByDateAsc);
+
+  let prevKm = null;
+  let nextKm = null;
+
+  for (const r of others) {
+    const km = num(r.km);
+    if (!Number.isFinite(km)) continue;
+    if (r.dateISO < dateISO) prevKm = km;
+    else if (r.dateISO > dateISO && nextKm === null) nextKm = km;
+  }
+
+  return { prevKm, nextKm };
+}
+
 function sortByDateAsc(a, b) {
   if (a.dateISO !== b.dateISO) return a.dateISO < b.dateISO ? -1 : 1;
   return (num(a.km) || 0) - (num(b.km) || 0);
@@ -1304,15 +1328,39 @@ function onVehicleChange() {
   el('infoUltimaKm').textContent = lastKm !== null ? `${nfKm.format(lastKm)} km` : 'primeiro registro';
   el('vehicleInfo').classList.remove('hidden');
 
-  const hint = el('kmHint');
-  hint.textContent = lastKm !== null
-    ? `A KM informada deve ser igual ou superior à última registrada (${nfKm.format(lastKm)} km).`
-    : 'Este é o primeiro registro do veículo — nenhuma restrição de odômetro.';
-  hint.classList.remove('hidden');
+  updateKmHint();
 
   const defaultFuel = v.combustivel === 'flex' ? 'etanol' : v.combustivel;
   const fuelRadio = document.querySelector(`input[name="fuelType"][value="${defaultFuel}"]`);
   if (fuelRadio) fuelRadio.checked = true;
+}
+
+function updateKmHint() {
+  const hint = el('kmHint');
+  const vehicleId = el('inpVeiculo').value;
+
+  if (!vehicleId || vehicleId === NEW_VEHICLE) {
+    hint.classList.add('hidden');
+    return;
+  }
+
+  if (state.editingId) {
+    const { prevKm, nextKm } = kmBoundsFor(vehicleId, state.editingId, el('inpData').value);
+    const rules = [];
+    if (prevKm !== null) rules.push(`igual ou superior à do abastecimento anterior (${nfKm.format(prevKm)} km)`);
+    if (nextKm !== null) rules.push(`igual ou inferior à do próximo abastecimento (${nfKm.format(nextKm)} km)`);
+
+    hint.textContent = rules.length
+      ? `A KM informada deve ser ${rules.join(' e ')}.`
+      : 'Este abastecimento não possui vizinhos — nenhuma restrição de odômetro.';
+  } else {
+    const lastKm = lastKmOf(vehicleId);
+    hint.textContent = lastKm !== null
+      ? `A KM informada deve ser igual ou superior à última registrada (${nfKm.format(lastKm)} km).`
+      : 'Este é o primeiro registro do veículo — nenhuma restrição de odômetro.';
+  }
+
+  hint.classList.remove('hidden');
 }
 
 function linkValueFields(sourceField) {
@@ -1377,6 +1425,7 @@ function startEdit(recordId) {
   if (fuelRadio) fuelRadio.checked = true;
 
   el('inpData').value = r.dateISO;
+  updateKmHint();
   el('inpKm').value = r.km;
   el('inpPreco').value = formatBRL(r.pricePerLiter);
   el('inpLitros').value = r.liters;
@@ -1410,11 +1459,30 @@ function validateForm() {
   if (!dateVal || isNaN(new Date(dateVal).getTime())) errors.push('Informe uma data válida.');
 
   const km = num(el('inpKm').value);
-  if (!Number.isFinite(km) || km < 0) errors.push('Informe a KM atual do odômetro.');
-  else if (vehicleId !== null) {
-    const lastKm = lastKmOf(vehicleId, state.editingId);
-    if (lastKm !== null && km < lastKm) {
-      errors.push(`KM não pode ser inferior à última registrada (${nfKm.format(lastKm)} km).`);
+  if (!Number.isFinite(km) || km < 0) {
+    errors.push('Informe a KM atual do odômetro.');
+  } else if (vehicleId !== null) {
+    if (state.editingId) {
+      const original = state.records.find((r) => r.id === state.editingId);
+      const unchanged = original
+        && original.vehicleId === vehicleId
+        && num(original.km) === km
+        && original.dateISO === dateVal;
+
+      // Corrigir apenas valores/digitação de um registro antigo não deve ser bloqueado.
+      if (!unchanged) {
+        const { prevKm, nextKm } = kmBoundsFor(vehicleId, state.editingId, dateVal);
+        if (prevKm !== null && km < prevKm) {
+          errors.push(`KM não pode ser inferior à do abastecimento anterior (${nfKm.format(prevKm)} km).`);
+        } else if (nextKm !== null && km > nextKm) {
+          errors.push(`KM não pode ser superior à do próximo abastecimento (${nfKm.format(nextKm)} km).`);
+        }
+      }
+    } else {
+      const lastKm = lastKmOf(vehicleId);
+      if (lastKm !== null && km < lastKm) {
+        errors.push(`KM não pode ser inferior à última registrada (${nfKm.format(lastKm)} km).`);
+      }
     }
   }
 
@@ -2027,6 +2095,7 @@ el('expValor').addEventListener('input', () => {
 });
 
 el('inpVeiculo').addEventListener('change', onVehicleChange);
+el('inpData').addEventListener('change', updateKmHint);
 
 el('inpPreco').addEventListener('input', () => {
   applyCurrencyMask(el('inpPreco'));
